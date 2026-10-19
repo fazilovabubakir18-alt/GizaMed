@@ -22,7 +22,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const { currentRole, setCurrentRole, currentUser } = useAuth();
   const { language, setLanguage } = useTheme();
-  const { branches, selectedBranchId, setSelectedBranchId, notifications, markNotificationAsRead } = useApp();
+  const { branches, selectedBranchId, setSelectedBranchId, notifications, markNotificationAsRead, backendStatus, isBackendConnected } = useApp();
   const t = useTranslation(language);
 
   const [showLangMenu, setShowLangMenu] = useState(false);
@@ -110,6 +110,26 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Right: Quick Action, Role Switcher, Language, Notifications, Customizer */}
       <div className="flex items-center gap-2">
+        {/* Backend Status Indicator */}
+        <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all duration-300 shadow-2xs select-none">
+          {backendStatus === 'connected' ? (
+            <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/80 px-2 py-0.5 rounded-full" title="REST API serveri va persistent ma'lumotlar bazasi to'liq faol">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-semibold">Bekend: Faol (Online)</span>
+            </span>
+          ) : backendStatus === 'connecting' ? (
+            <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/80 px-2 py-0.5 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+              <span>Bekend: Ulanmoqda...</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full" title="Lokal rejim">
+              <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+              <span>Lokal kesh</span>
+            </span>
+          )}
+        </div>
+
         {/* Quick Action Button */}
         <button
           onClick={onOpenQuickAction}

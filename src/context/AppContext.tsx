@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   Student, Branch, Course, Room, Group, AttendanceRecord,
   Homework, HomeworkSubmission, Lead, Contract, PaymentTransaction,
@@ -14,6 +14,7 @@ import {
   initialExpenses, initialSalaries, initialTasks,
   initialAuditLogs, initialSupportTickets
 } from '../data/mockData';
+import { api } from '../services/api';
 
 interface AppContextType {
   // Data
@@ -36,6 +37,11 @@ interface AppContextType {
   auditLogs: AuditLog[];
   supportTickets: SupportTicket[];
   notifications: SystemNotification[];
+
+  // Backend Connectivity
+  isBackendConnected: boolean;
+  backendStatus: 'connected' | 'connecting' | 'offline';
+  refreshFromBackend: () => Promise<void>;
 
   // Global filters
   selectedBranchId: string; // 'all' or specific branch
@@ -119,6 +125,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => load('supportTickets', initialSupportTickets));
 
   const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
+  const [backendStatus, setBackendStatus] = useState<'connected' | 'connecting' | 'offline'>('connecting');
+  const isBackendConnected = backendStatus === 'connected';
 
   const [notifications, setNotifications] = useState<SystemNotification[]>([
     {
@@ -146,6 +154,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       read: true
     }
   ]);
+
+  const refreshFromBackend = useCallback(async () => {
+    try {
+      setBackendStatus('connecting');
+      const health = await api.getHealth();
+      if (health.status === 'healthy') {
+        const [
+          stRes, tcRes, grRes, brRes, crRes, rmRes, atRes, hwRes, ldRes, cnRes, pyRes, cgRes, exRes, slRes, tkRes, ntRes, adRes
+        ] = await Promise.allSettled([
+          api.getStudents(),
+          api.getStaff(),
+          api.getGroups(),
+          api.getBranches(),
+          api.getCourses(),
+          api.getRooms(),
+          api.getAttendance(),
+          api.getHomeworks(),
+          api.getLeads(),
+          api.getContracts(),
+          api.getPayments(),
+          api.getCashRegisters(),
+          api.getExpenses(),
+          api.getSalaries(),
+          api.getTasks(),
+          api.getNotifications(),
+          api.getAuditLogs()
+        ]);
+
+        if (stRes.status === 'fulfilled' && stRes.value?.data) setStudents(stRes.value.data);
+        if (tcRes.status === 'fulfilled' && tcRes.value?.data) setStaff(tcRes.value.data);
+        if (grRes.status === 'fulfilled' && grRes.value?.data) setGroups(grRes.value.data);
+        if (brRes.status === 'fulfilled' && brRes.value?.data) setBranches(brRes.value.data);
+        if (crRes.status === 'fulfilled' && crRes.value?.data) setCourses(crRes.value.data);
+        if (rmRes.status === 'fulfilled' && rmRes.value?.data) setRooms(rmRes.value.data);
+        if (atRes.status === 'fulfilled' && atRes.value?.data) setAttendance(atRes.value.data);
+        if (hwRes.status === 'fulfilled' && hwRes.value?.data) setHomeworks(hwRes.value.data);
+        if (ldRes.status === 'fulfilled' && ldRes.value?.data) setLeads(ldRes.value.data);
+        if (cnRes.status === 'fulfilled' && cnRes.value?.data) setContracts(cnRes.value.data);
+        if (pyRes.status === 'fulfilled' && pyRes.value?.data) setPayments(pyRes.value.data);
+        if (cgRes.status === 'fulfilled' && cgRes.value?.data) setCashRegisters(cgRes.value.data);
+        if (exRes.status === 'fulfilled' && exRes.value?.data) setExpenses(exRes.value.data);
+        if (slRes.status === 'fulfilled' && slRes.value?.data) setSalaries(slRes.value.data);
+        if (tkRes.status === 'fulfilled' && tkRes.value?.data) setTasks(tkRes.value.data);
+        if (ntRes.status === 'fulfilled' && ntRes.value?.data) setNotifications(ntRes.value.data);
+        if (adRes.status === 'fulfilled' && adRes.value?.data) setAuditLogs(adRes.value.data);
+
+        setBackendStatus('connected');
+      } else {
+        setBackendStatus('offline');
+      }
+    } catch {
+      setBackendStatus('offline');
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshFromBackend();
+  }, [refreshFromBackend]);
 
   // Sync with LocalStorage
   useEffect(() => {
@@ -189,17 +255,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setStudents(prev => [newStudent, ...prev]);
     logAudit('Yangi o‘quvchi qo‘shildi', 'Student', newStudent.id, `${newStudent.fullName} tizimga kiritildi.`);
+    api.createStudent(data).catch(err => console.warn('[Backend] createStudent error:', err));
   };
 
   const updateStudent = (id: string, updates: Partial<Student>) => {
     setStudents(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
     logAudit('O‘quvchi ma’lumotlari yangilandi', 'Student', id, `O‘zgarishlar kiritildi: ${Object.keys(updates).join(', ')}`);
+    api.updateStudent(id, updates).catch(err => console.warn('[Backend] updateStudent error:', err));
   };
 
   const deleteStudent = (id: string) => {
     const student = students.find(s => s.id === id);
     setStudents(prev => prev.filter(s => s.id !== id));
     logAudit('O‘quvchi o‘chirildi', 'Student', id, `${student?.fullName || id} tizimdan o‘chirildi.`);
+    api.deleteStudent(id).catch(err => console.warn('[Backend] deleteStudent error:', err));
   };
 
   // Group Actions
@@ -210,11 +279,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setGroups(prev => [...prev, newGroup]);
     logAudit('Yangi guruh ochildi', 'Group', newGroup.id, `${newGroup.name} guruhi ochildi.`);
+    api.createGroup(groupData).catch(err => console.warn('[Backend] createGroup error:', err));
   };
 
   const updateGroup = (id: string, updates: Partial<Group>) => {
     setGroups(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
     logAudit('Guruh yangilandi', 'Group', id, `Guruh yangilandi.`);
+    api.updateGroup(id, updates).catch(err => console.warn('[Backend] updateGroup error:', err));
   };
 
   const addCourse = (courseData: Omit<Course, 'id'>) => {
@@ -224,6 +295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setCourses(prev => [...prev, newCourse]);
     logAudit('Yangi kurs kiritildi', 'Course', newCourse.id, `${newCourse.title} kursi qo‘shildi.`);
+    api.createCourse(courseData).catch(err => console.warn('[Backend] createCourse error:', err));
   };
 
   // Attendance Actions
@@ -250,6 +322,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     logAudit('Davomat belgilandi', 'Attendance', studentId, `Sana: ${date}, Holat: ${status}`);
+    api.markAttendance(groupId, studentId, date, status, note).catch(err => console.warn('[Backend] markAttendance error:', err));
   };
 
   const bulkMarkAttendance = (groupId: string, date: string, status: AttendanceStatus) => {
@@ -258,6 +331,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       markAttendance(groupId, st.id, date, status);
     });
     logAudit('Ommaviy davomat belgilandi', 'Attendance', groupId, `${groupStudents.length} ta o‘quvchiga "${status}" qo‘yildi.`);
+    api.bulkMarkAttendance(groupId, date, status).catch(err => console.warn('[Backend] bulkMarkAttendance error:', err));
   };
 
   // Homework Actions
@@ -271,11 +345,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setHomeworks(prev => [newHw, ...prev]);
     logAudit('Uy vazifasi yaratildi', 'Homework', newHw.id, `${newHw.title} vazifasi berildi.`);
+    api.createHomework(hwData).catch(err => console.warn('[Backend] createHomework error:', err));
   };
 
   const gradeHomeworkSubmission = (submissionId: string, grade: number, feedback: string) => {
     setSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, grade, feedback, status: 'graded' } : s));
     logAudit('Vazifa baholandi', 'HomeworkSubmission', submissionId, `Baho: ${grade}/100`);
+    api.gradeSubmission(submissionId, grade, feedback).catch(err => console.warn('[Backend] gradeSubmission error:', err));
   };
 
   // CRM Actions
@@ -287,11 +363,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setLeads(prev => [newLead, ...prev]);
     logAudit('Yangi lid kiritildi', 'Lead', newLead.id, `${newLead.fullName} (${newLead.source})`);
+    api.createLead(leadData).catch(err => console.warn('[Backend] createLead error:', err));
   };
 
   const updateLeadStage = (id: string, stage: LeadStage) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, stage } : l));
     logAudit('Lid bosqichi o‘zgardi', 'Lead', id, `Yangi bosqich: ${stage}`);
+    api.updateLeadStage(id, stage).catch(err => console.warn('[Backend] updateLeadStage error:', err));
   };
 
   const convertLeadToStudent = (leadId: string, groupId: string) => {
@@ -322,6 +400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: 'faol_oquvchi', convertedStudentId: newStudentId } : l));
 
     logAudit('Lid o‘quvchiga aylantirildi', 'Lead', leadId, `${lead.fullName} -> Yangi o‘quvchi ID: ${newStudentId}`);
+    api.convertLeadToStudent(leadId, groupId).catch(err => console.warn('[Backend] convertLeadToStudent error:', err));
   };
 
   // Contract Actions
@@ -338,6 +417,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setContracts(prev => [newContract, ...prev]);
     logAudit('Yangi shartnoma yaratildi', 'Contract', newContract.id, `Shartnoma № ${contractNum} yaratildi.`);
+    api.createContract(data).catch(err => console.warn('[Backend] createContract error:', err));
     return newContract;
   };
 
@@ -364,6 +444,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     logAudit('Shartnoma SMS orqali tasdiqlandi', 'Contract', contractId, `Shartnoma № ${contract.contractNumber} tasdiqlandi. Hash: ${auditHash.substring(0, 18)}...`);
+    api.verifyContractSms(contractId, phone).catch(err => console.warn('[Backend] verifyContractSms error:', err));
 
     return {
       success: true,
@@ -406,6 +487,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     logAudit('To‘lov qabul qilindi', 'Payment', newPayment.id, `Summa: ${data.amount.toLocaleString()} so‘m, Usul: ${data.paymentMethod}`);
+    api.recordPayment(data).catch(err => console.warn('[Backend] recordPayment error:', err));
     return newPayment;
   };
 
@@ -425,6 +507,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     logAudit('Xarajat kiritildi', 'Expense', newExpense.id, `${data.category}: ${data.amount.toLocaleString()} so‘m`);
+    api.addExpense(data).catch(err => console.warn('[Backend] addExpense error:', err));
   };
 
   // Tasks & Support
@@ -436,11 +519,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setTasks(prev => [newTask, ...prev]);
     logAudit('Yangi vazifa tayinlandi', 'Task', newTask.id, newTask.title);
+    api.createTask(taskData).catch(err => console.warn('[Backend] createTask error:', err));
   };
 
   const updateTaskStatus = (taskId: string, status: StaffTask['status']) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status } : t));
     logAudit('Vazifa holati o‘zgardi', 'Task', taskId, `Status: ${status}`);
+    api.updateTaskStatus(taskId, status).catch(err => console.warn('[Backend] updateTaskStatus error:', err));
   };
 
   // Staff & Teacher Actions
@@ -458,11 +543,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       newStaff.id,
       `${newStaff.fullName} (${data.role}) tizimga kiritildi.`
     );
+    if (data.role === 'teacher') {
+      api.createTeacher(data).catch(err => console.warn('[Backend] createTeacher error:', err));
+    } else {
+      api.createStaff(data).catch(err => console.warn('[Backend] createStaff error:', err));
+    }
   };
 
   const updateStaffMember = (id: string, updates: Partial<StaffMember>) => {
     setStaff(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
     logAudit('Xodim ma’lumotlari yangilandi', 'StaffMember', id, `O‘zgarishlar: ${Object.keys(updates).join(', ')}`);
+    api.updateTeacher(id, updates).catch(err => console.warn('[Backend] updateStaff error:', err));
   };
 
   const deleteStaffMember = (id: string) => {
@@ -476,6 +567,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id,
       `${member?.fullName || id} tizimdan to‘liq o‘chirildi.`
     );
+    if (member?.role === 'teacher') {
+      api.deleteTeacher(id).catch(err => console.warn('[Backend] deleteTeacher error:', err));
+    } else {
+      api.deleteStaff(id).catch(err => console.warn('[Backend] deleteStaff error:', err));
+    }
   };
 
   const addTeacher = (data: Omit<StaffMember, 'id' | 'joinedDate' | 'role'> & { role?: 'teacher' }) => {
@@ -507,6 +603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const markNotificationAsRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    api.markNotificationAsRead(id).catch(err => console.warn('[Backend] markNotification error:', err));
   };
 
   const exportDatabaseJson = () => {
@@ -532,6 +629,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.attendance && Array.isArray(data.attendance)) setAttendance(data.attendance);
       if (data.staff && Array.isArray(data.staff)) setStaff(data.staff);
       logAudit('Ma’lumotlar bazasi tiklandi', 'System', 'backup', 'Zaxira nusxadan muvaffaqiyatli tiklandi.');
+      api.restoreDatabase(jsonString).catch(err => console.warn('[Backend] restoreDatabase error:', err));
       return true;
     } catch {
       return false;
@@ -559,6 +657,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSupportTickets(initialSupportTickets);
     localStorage.clear();
     logAudit('Tizim standart holatga qaytarildi', 'System', 'reset', 'Barcha namunaviy ma’lumotlar yangilandi.');
+    api.resetDatabase().catch(err => console.warn('[Backend] resetDatabase error:', err));
   };
 
   return (
@@ -567,6 +666,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attendance, homeworks, submissions, leads, contracts,
       payments, cashRegisters, expenses, salaries, tasks,
       auditLogs, supportTickets, notifications,
+      isBackendConnected, backendStatus, refreshFromBackend,
       selectedBranchId, setSelectedBranchId,
       addStudent, updateStudent, deleteStudent,
       addGroup, updateGroup, addCourse,
