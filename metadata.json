@@ -1,0 +1,6 @@
+{
+  "name": "EDUVERSE CRM & ERP",
+  "description": "O‘quv markazlarini boshqarishning yangi avlod raqamli platformasi (CRM, ERP, LMS, Moliya, E-Shartnoma va AI Tahlili)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
